@@ -18,16 +18,19 @@ namespace StartConsole
 			 */
 			Console.Title = "MCFrog";
 			
+#if !NoUpdate
 			if (UpdateCheck())
 			{
 				Update();
 				return;
 			}
+#endif
 
 			Console.WriteLine("Starting Main System...");
 			new LillyPad.LillyPad();
 		}
 
+#if !NoUpdate
 		private static void Update()
 		{
 			new Updater().Init();
@@ -63,5 +66,6 @@ namespace StartConsole
 				return false;
 			}
 		}
+#endif
 	}
 }

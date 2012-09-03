@@ -29,11 +29,13 @@ namespace MCFrog.HeartBeat
 			}; HeartbeatTimer.Start();
 
 			Pumpboth();
+#if !NoPortWorkAround
 
 			if (IsWorkaroundEnabled)
 			{
 				new PortWorkAround();
 			}
+#endif
 		}
 
 		void Stop()

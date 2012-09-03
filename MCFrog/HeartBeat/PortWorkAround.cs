@@ -9,6 +9,7 @@ using System.Net.Sockets;
 
 namespace MCFrog.HeartBeat
 {
+#if !NoPortWorkAround
 	class PortWorkAround
 	{
 		TcpClient tcpClient;
@@ -89,4 +90,5 @@ namespace MCFrog.HeartBeat
 			stream.WriteByte(0);
 		}
 	}
+#endif
 }

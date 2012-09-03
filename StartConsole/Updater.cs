@@ -5,6 +5,7 @@ using System.Net;
 
 namespace StartConsole
 {
+#if !NoUpdate
 	public class Updater
 	{
 		private const string Filename = "MCFrog_Update.exe";
@@ -106,4 +107,5 @@ namespace StartConsole
 			Process.Start(Directory.GetCurrentDirectory() + "\\MCFrog_Update_Batch.bat");
 		}
 	}
+#endif
 }
