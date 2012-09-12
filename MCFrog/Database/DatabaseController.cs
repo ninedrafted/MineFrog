@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace MCFrog.Database
+namespace MineFrog.Database
 {
 	public class DatabaseController : MarshalByRefObject
 	{
@@ -24,6 +24,11 @@ namespace MCFrog.Database
 		public void CreateNewTable(string name, DataTypes[] dataTypes)
 		{
 			database.CreateNewTable(name, dataTypes);
+		}
+
+		public void LoadKeyFile()
+		{
+			database.LoadKeyFile();
 		}
 
 		public override object InitializeLifetimeService()

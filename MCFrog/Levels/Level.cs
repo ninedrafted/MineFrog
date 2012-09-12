@@ -5,33 +5,47 @@ using System.IO.Compression;
 using System.Linq;
 using System.Text;
 
-namespace MCFrog
+namespace MineFrog
 {
 	public class Level
 	{
 		private const string LevelFolder = "levels";
 		private const string CompressedExtension = ".LvC";
 		private const string BackupExtension = ".bak";
-		private const int HeaderSize = 80;
-		private readonly ASCIIEncoding _encode = new ASCIIEncoding();
+		private const int HeaderSize = 82;
+		private readonly ASCIIEncoding _encode= new ASCIIEncoding();
 		//private readonly FileStream _fileHandle;
-		internal byte[] BlockData;
-		internal bool IsUnloaded = false;
+		public byte[] BlockData;
+		public bool IsUnloaded = false;
 
-		internal string Name;
-		internal PhysicsHandler Physics;
-		internal List<Player> Players = new List<Player>();
-		internal ushort SizeX;
-		internal ushort SizeY;
-		internal ushort SizeZ;
+		public string Name;
+		public PhysicsHandler Physics;
+		public List<Player> Players = new List<Player>();
+		public ushort SizeX;
+		public ushort SizeY;
+		public ushort SizeZ;
 
 		internal int BlockChangeCount;
 		internal int UpdateCountToSave = 0; //This counts up to the frequency, so we know when to save :D
 		internal int UpdateCountSaveFrequency = 30; //Each update check is 10 seconds, so this is 5 mins
 
-		internal Pos SpawnPos;
+		internal byte VisitPermissions = 1;
+		internal byte BuildPermissions = 1;
 
-		internal Level(string fileName, bool shouldCreateIfNotExist)
+		public byte WaterCurrent
+		{
+			get { return Physics.WaterCurrent; }
+			set { Physics.WaterCurrent = value; }
+		}
+		public byte LavaCurrent
+		{
+			get { return Physics.LavaCurrent; }
+			set { Physics.LavaCurrent = value; }
+		}
+
+		public Pos SpawnPos;
+
+		public Level(string fileName, bool shouldCreateIfNotExist)
 		{
 			try
 			{
@@ -56,7 +70,7 @@ namespace MCFrog
 			UncompressAndCreateHandle();
 		}
 
-		internal Level(string name, ushort x, ushort y, ushort z)
+		public Level(string name, ushort x, ushort y, ushort z)
 		{
 			try
 			{
@@ -87,7 +101,7 @@ namespace MCFrog
 		{
 		}
 
-		private void Load(string name)
+		public void Load(string name)
 		{
 			string tempPath = LevelFolder + "/" + name + CompressedExtension;
 			if (!File.Exists(tempPath)) throw new FileNotFoundException("Could not find file!", tempPath);
@@ -112,7 +126,10 @@ namespace MCFrog
 			SpawnPos.Pitch = header[77];
 
 			bool physics = BitConverter.ToBoolean(header, 78);
-			bool realistic = BitConverter.ToBoolean(header, 78);
+			bool realistic = BitConverter.ToBoolean(header, 79);
+
+			BuildPermissions = header[80];
+			VisitPermissions = header[81];
 
 			Physics = new PhysicsHandler(this, physics) {Realistic = realistic};
 
@@ -126,7 +143,7 @@ namespace MCFrog
 			LevelHandler.Levels.Add(this);
 		}
 
-		private void Create(ushort inx, ushort iny, ushort inz) //todo add type
+		public void Create(ushort inx, ushort iny, ushort inz) //todo add type
 		{
 			SizeX = inx;
 			SizeY = iny;
@@ -152,11 +169,11 @@ namespace MCFrog
 					{
 						if (y != half)
 						{
-							SetTile(x, y, z, (byte) ((y >= half) ? Blocks.Air : Blocks.Dirt));
+							SetTile(x, y, z, (byte) ((y >= half) ? MCBlocks.Air : MCBlocks.Dirt));
 						}
 						else
 						{
-							SetTile(x, y, z, (byte) Blocks.Grass);
+							SetTile(x, y, z, (byte) MCBlocks.Grass);
 						}
 					}
 				}
@@ -167,7 +184,7 @@ namespace MCFrog
 			LevelHandler.Levels.Add(this);
 		}
 
-		internal void Unload()
+		public void Unload()
 		{
 			LevelHandler.Levels.Remove(this);
 
@@ -191,7 +208,7 @@ namespace MCFrog
 			BlockData = new byte[0];
 		}
 
-		internal void FullSave()
+		public void FullSave()
 		{
 			/*
 			 * All we need to do here is dump our level blocks to the file
@@ -226,6 +243,8 @@ namespace MCFrog
 			gzipStream.WriteByte(SpawnPos.Yaw);
 			gzipStream.Write(BitConverter.GetBytes(Physics.IsEnabled), 0, 1);
 			gzipStream.Write(BitConverter.GetBytes(Physics.Realistic), 0, 1);
+			gzipStream.WriteByte(BuildPermissions);
+			gzipStream.WriteByte(VisitPermissions);
 
 			gzipStream.Write(BlockData, 0, BlockData.Length);
 
@@ -253,7 +272,7 @@ namespace MCFrog
 				Directory.CreateDirectory(LevelFolder);
 		}
 
-		internal bool SetTile(ushort x, ushort y, ushort z, byte type)
+		public bool SetTile(ushort x, ushort y, ushort z, byte type)
 		{
 			if (NotInBounds(x, y, z))
 			{
@@ -270,23 +289,23 @@ namespace MCFrog
 			return true;
 		}
 
-		internal void PhysicsCheck(ushort inX, ushort inY, ushort inZ)
+		public void PhysicsCheck(ushort inX, ushort inY, ushort inZ)
 		{
 			for (int x = -1; x < 2; ++x)
 				for (int y = -1; y < 2; ++y)
 					for (int z = -1; z < 2; ++z)
 					{
-						var blockPos = new BlockPos(inX + x, inY + y, inZ + z);
+						var blockPos = new BlockPos(inX + x, inY + y, inZ + z, this);
 
 						if (NotInBounds(blockPos)) continue;
 						int pos = PosToInt(blockPos);
 						if (BlockData[pos] == 0) continue;
 						if (Physics.PhysicsUpdates.Contains(pos)) continue;
-						Physics.PhysicsUpdates.Add(pos);
+						Physics.AddCall(pos);
 					}
 		}
 
-		internal bool BlockChange(ushort x, ushort y, ushort z, byte type)
+		public bool BlockChange(ushort x, ushort y, ushort z, byte type)
 		{
 			if (SetTile(x, y, z, type))
 			{
@@ -341,12 +360,17 @@ namespace MCFrog
 			return false;
 		}
 
-		internal bool PhysicsBlockChange(BlockPos pos, Blocks type)
+		public bool PhysicsBlockChange(BlockPos pos, MCBlocks type)
 		{
 			return PhysicsBlockChange(pos, (byte) type);
 		}
 
-		internal byte GetTile(ushort x, ushort y, ushort z)
+		public byte GetTile(int pos)
+		{
+			return BlockData[pos];
+		}
+
+		public byte GetTile(ushort x, ushort y, ushort z)
 		{
 			if (NotInBounds(x, y, z))
 			{
@@ -356,18 +380,18 @@ namespace MCFrog
 			return BlockData[PosToInt(x, y, z)];
 		}
 
-		internal Blocks GetTile(BlockPos pos)
+		public MCBlocks GetTile(BlockPos pos)
 		{
-			return (Blocks) GetTile(pos.X, pos.Y, pos.Z);
+			return (MCBlocks) GetTile(pos.X, pos.Y, pos.Z);
 		}
 
-		internal Blocks GetTile(BlockPos pos, int diffX, int diffY, int diffZ)
+		public MCBlocks GetTile(BlockPos pos, int diffX, int diffY, int diffZ)
 		{
 			var x = (ushort) (pos.X + diffX);
 			var y = (ushort) (pos.Y + diffY);
 			var z = (ushort) (pos.Z + diffZ);
 
-			return (Blocks) GetTile(x, y, z);
+			return (MCBlocks) GetTile(x, y, z);
 		}
 
 		public bool NotInBounds(ushort x, ushort y, ushort z)
@@ -402,15 +426,17 @@ namespace MCFrog
 			return PosToInt(pos.X, pos.Y, pos.Z);
 		}
 
-		public BlockPos IntToPos(int pos)
+		public BlockPos IntToBlockPos(int pos)
 		{
+			//TODO make int to block pos more efficient (if possible)
+			int index = pos;
 			var y = (ushort) (pos/SizeX/SizeZ);
 			pos -= y*SizeX*SizeZ;
 			var z = (ushort) (pos/SizeX);
 			pos -= z*SizeX;
 			var x = (ushort) pos;
 
-			return new BlockPos(x, y, z);
+			return new BlockPos(x, y, z, index, this);
 		}
 
 		public int IntOffset(int pos, int x, int y, int z)
@@ -418,50 +444,124 @@ namespace MCFrog
 			return pos + x + z*SizeX + y*SizeX*SizeZ;
 		}
 
-		internal static Level Find(string name)
+		public static Level Find(string name)
 		{
 			return LevelHandler.Levels.ToArray().FirstOrDefault(l => l.Name == name);
 		}
 
 		internal void SaveCheck()
 		{
-			Server.Log("Checking if level should save " + Name, LogTypesEnum.Debug);
+			//Server.Log("Checking if level should save " + Name, LogTypesEnum.Debug);
 			UpdateCountToSave++;
 
-			if (UpdateCountToSave >= UpdateCountSaveFrequency || BlockChangeCount >= 1000)
+			if (UpdateCountToSave >= UpdateCountSaveFrequency || BlockChangeCount >= 5000)
 			{
-				Server.Log("Saving Level: " + Name, LogTypesEnum.Debug);
+				Player.SendGlobalMessage("Saving Level: " + Name);
 				FullSave();
 
 				UpdateCountToSave = 0;
 				BlockChangeCount = 0;
 			}
 		}
+
 	}
+
+	//Declaring this outside the scope of a class so that we can just use it.S
+	public delegate bool BlockCheck(BlockPos pos);
 
 	public struct BlockPos
 	{
 		public ushort X;
 		public ushort Y;
 		public ushort Z;
+		public int Index;
+		public readonly Level Level;
+		public bool InBounds;
+		public byte BlockType;
+		public MCBlocks BlockMCType;
 
-		public BlockPos(ushort x, ushort y, ushort z)
+		public BlockPos Below
+		{
+			get { return Diff(0, -1, 0); }
+		}
+		public BlockPos Above
+		{
+			get { return Diff(0, 1, 0); }
+		}
+
+		public BlockPos(ushort x, ushort y, ushort z, int pos, Level l)
 		{
 			X = x;
 			Y = y;
 			Z = z;
+			Level = l;
+			Index = pos;
+			InBounds = !l.NotInBounds(X, Y, Z);
+			BlockType = !InBounds ? (byte)255 : l.GetTile(Index);
+			BlockMCType = (MCBlocks) BlockType;
 		}
-
-		public BlockPos(int x, int y, int z)
+		public BlockPos(int x, int y, int z, int pos, Level l)
 		{
 			X = (ushort) x;
 			Y = (ushort) y;
-			Z = (ushort) z;
+			Z = (ushort)z;
+			Level = l;
+			Index = pos;
+			InBounds = !l.NotInBounds(X, Y, Z);
+			BlockType = !InBounds ? (byte)255 : l.GetTile(Index);
+			BlockMCType = (MCBlocks)BlockType;
+		}
+
+		public BlockPos(ushort x, ushort y, ushort z, Level l)
+		{
+			X = x;
+			Y = y;
+			Z = z;
+			Level = l;
+			Index = l.PosToInt(X, Y, Z);
+			InBounds = !l.NotInBounds(X, Y, Z);
+			BlockType = !InBounds ? (byte)255 : l.GetTile(Index);
+			BlockMCType = (MCBlocks)BlockType;
+		}
+		public BlockPos(int x, int y, int z, Level l)
+		{
+			X = (ushort)x;
+			Y = (ushort)y;
+			Z = (ushort)z;
+			Level = l;
+			Index = l.PosToInt(X, Y, Z);
+			InBounds = !l.NotInBounds(X, Y, Z);
+			BlockType = !InBounds ? (byte)255 : l.GetTile(Index);
+			BlockMCType = (MCBlocks)BlockType;
+		}
+		
+		public void Around(BlockCheck check)
+		{
+			for(var inx = -1; inx < 2; inx++)
+			{
+				for (var inz = -1; inz < 2; inz++)
+				{
+					//This skips checking of the center block
+					if (inx == 0 && inz == 0) continue;
+
+					//This checks to make sure were not checking corners
+					if (Math.Abs(inx) == 1 && Math.Abs(inz) == 1) continue;
+
+					//Create a new BlockPos struct
+					BlockPos blockPos = Diff(inx, 0, inz);
+
+					//Check if were inbounds, if not we don't check this one
+					if (!blockPos.InBounds) continue;
+
+					//Perform the delegate call!
+					check(blockPos);
+				}
+			}
 		}
 
 		public BlockPos Diff(int x, int y, int z)
 		{
-			return new BlockPos((ushort) (X + x), (ushort) (Y + y), (ushort) (Z + z));
+			return new BlockPos((ushort) (X + x), (ushort) (Y + y), (ushort) (Z + z), Level);
 		}
 	}
 }

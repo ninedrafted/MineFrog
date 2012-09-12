@@ -7,31 +7,103 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
-using MCFrog.History;
+using MineFrog.History;
+using MineFrog.PreLoader;
+using System.Security.Cryptography;
 
-namespace MCFrog
+namespace MineFrog
 {
 	public class Player
 	{
 		private const byte ProtocolVersion = 0x07;
 		private static readonly ASCIIEncoding Asen = new ASCIIEncoding();
+		static MD5CryptoServiceProvider md5 = new MD5CryptoServiceProvider();
 
 		private readonly TcpClient _tcpClient;
-		internal int UID = 0; //This is the users Unique ID for the whole server
-		internal byte UserId = 101; //This is the users ID in the session
-		private bool _isDisconnected;
-		private Pos _delta;
-		private bool _enableHistoryMode;
-		private bool _enableLavaMode;
-		private bool _enableWaterMode;
-		private string _ip;
-		private bool _isAdmin = false;
-		//private bool _isInvisible = false;
-		private bool _isLoading;
-		private bool _isLoggedIn;
+		public int UID = 0; //This is the users Unique ID for the whole server
+		public byte UserId = 101; //This is the users ID in the session
+		public bool _isDisconnected;
+		public Pos _delta;
+		public bool _enableHistoryMode;
+		public bool _enableLavaMode;
+		public bool _enableWaterMode;
+		public string _ip;
 
-		internal Level Level = LevelHandler.Lobby;
-		internal Level OldLevel; //If not null represents the old level that this player was in
+		public bool IsAdmin
+		{
+			get { return gdb.isAdmin; }
+		}
+		public string Nickname
+		{
+			get
+			{
+				if (string.IsNullOrWhiteSpace(pdb.Nickname)) return Username;
+				else return pdb.Nickname;
+			}
+			set { pdb.Nickname = value; pdb.sync();}
+		}
+		public byte WarningLevel
+		{
+			get { return pdb.WarningLevel; }
+			set { pdb.WarningLevel = value; pdb.sync(); }
+		}
+		public bool IsFrozen
+		{
+			get { return pdb.isFrozen; }
+			set { pdb.isFrozen = value; }
+		}
+		public bool IsMuted
+		{
+			get { return pdb.isMuted || gdb.canChat; }
+			set { pdb.isMuted = value; }
+		}
+
+		//TODO BlockChange System for Commands!
+
+		public byte PermissionLevel
+		{
+			get
+			{
+				//Server.Log(gdb.PermissionLevel + " wtf?", LogTypesEnum.Debug);
+				return gdb.PermissionLevel;
+			}
+		}
+		public bool canBuild
+		{
+			get { return gdb.canBuild; }
+		}
+		public int MaxBlockChange
+		{
+			get { return gdb.MaxBlockChange; }
+		}
+
+		public string Tag
+		{
+			get
+			{
+				return gdb.GroupColor + "" + gdb.GroupTag + MCColor.white + "" + Nickname;
+			}
+		}
+
+		private bool _isInvisible = false;
+
+		public bool _isLoading;
+		public bool _isLoggedIn;
+
+		public PDB pdb;
+		public GDB gdb
+		{
+			get { return pdb.Group; }
+			set
+			{
+				pdb.Group = value;
+				pdb.GroupID = gdb.GID;
+				pdb.sync();
+			}
+		}
+
+		public Level Level = LevelHandler.Lobby;
+		public Level OldLevel; //If not null represents the old level that this player was in
 
 		public Pos OldPosition;
 		public Pos Position;
@@ -152,17 +224,32 @@ namespace MCFrog
 			}
 
 			Username = Asen.GetString(data, 1, 64).Trim();
-			string hash = Asen.GetString(data, 65, 64).Trim();
+			string hash = Asen.GetString(data, 65, 32).Trim();
 			byte type = data[129];
 
+			if (string.IsNullOrWhiteSpace(hash) || hash == "--" || hash != BitConverter.ToString(md5.ComputeHash(Asen.GetBytes(Configuration.ServerSalt + Username))).Replace("-", "").ToLower().TrimStart('0'))
+			{
+				SendKick("Account could not be verified, try again.");
+				Server.Log(Server.HeartBeat._hash + "", LogTypesEnum.Debug);
+				Server.Log("'" + hash + "' != '" + BitConverter.ToString(md5.ComputeHash(Asen.GetBytes(Configuration.ServerSalt + Username))).Replace("-", "").ToLower().TrimStart('0') + "'", LogTypesEnum.Debug);
+				return;
+			}
 
-			PreLoader.PDB pdb = PreLoader.PDB.Find(Username.Trim().ToLower());
+			pdb = PDB.Find(Username.Trim().ToLower());
 			if(pdb == null)
 			{
-				var dbData = new object[] {Username, "", _ip, (byte) 0, (byte) 0, false, false};
-				UID = Server.users.NewRow(dbData);
-				new PreLoader.PDB(UID, dbData);
-				Server.Log(UID + " is this players UID :D", LogTypesEnum.Debug);
+				var dbData = new object[] {Username, "", _ip, (byte) 0, 0, false, false};
+				try
+				{
+					UID = Server.users.NewRow(dbData);
+				}
+				catch (Exception e)
+				{
+					throw new Exception("FUCK");
+				}
+
+				//UID = Server.users.NewRow(dbData);
+				pdb = new PDB(UID, dbData);
 			}
 			else
 			{
@@ -200,48 +287,60 @@ namespace MCFrog
 			bool isPlacing = data[6] == 0x01;
 			byte incomingType = data[7];
 
+			if (Level.NotInBounds(x, y, z)) return;
+
 			int blockPos = Level.PosToInt(x, y, z);
+
+			if (blockPos >= Level.BlockData.Length || blockPos < 0)
+			{
+				Server.Log(blockPos + " was OUT OF BOUNDS!", LogTypesEnum.Error);
+				return;
+			}
+
+			byte oldBlock = Level.BlockData[blockPos];
 
 			if (_enableHistoryMode)
 			{
-				SendBlockChange(x, y, z, Level.BlockData[blockPos]);
-				HisData hD = Server.HistoryController.GetData(Level.Name, blockPos);
-				SendMessage("Type: " + hD.Type);
-				SendMessage("UID: " + hD.UID);
+				SendBlockChange(x, y, z, oldBlock);
+				var hD = Server.HistoryController.GetData(Level.Name, blockPos);
+				var playername = "Unknown";
+				var oldName = "Unknown";
+				var currentName = "Unknown";
+
+				if (Block.Blocks.ContainsKey(oldBlock)) currentName = Block.Blocks[oldBlock].Name;
+				if (Block.Blocks.ContainsKey(hD.Type)) oldName = Block.Blocks[hD.Type].Name;
+				if (hD.UID != int.MaxValue) playername = PDB.Find(hD.UID).Username;
+				
+				SendMessage("CurrentType: " + currentName);
+				SendMessage("OldType: " + oldName);
+				SendMessage("Editor: " + playername);
+				return;
+			}
+			if(PermissionLevel < Level.BuildPermissions)
+			{
+				SendBlockChange(x, y, z, oldBlock);
 				return;
 			}
 			if (_enableWaterMode)
 			{
-				Level.PlayerBlockChange(this, x, y, z, (byte) Blocks.Water);
+				Level.PlayerBlockChange(this, x, y, z, (byte) MCBlocks.Water);
 				return;
 			}
 			if (_enableLavaMode)
 			{
-				Level.PlayerBlockChange(this, x, y, z, (byte) Blocks.Lava);
+				Level.PlayerBlockChange(this, x, y, z, (byte) MCBlocks.Lava);
 				return;
 			}
 
 			if (isPlacing)
 			{
 				Level.PlayerBlockChange(this, x, y, z, incomingType);
-
-				//if (!level.physics.PhysicsUpdates.Contains(blockPos))
-				//{
-				//	//Server.Log("adding to physics list", LogTypesEnum.debug);
-				//	level.physics.PhysicsUpdates.Add(blockPos);
-				//}
-
-				//Check the block below too, for grass and whatnot
-				//blockPos = level.PosToInt(x, (ushort)(y-1), z);
-				//if (!level.physics.PhysicsUpdates.Contains(blockPos))
-				//{
-				//	//Server.Log("adding to physics list", LogTypesEnum.debug);
-				//	level.physics.PhysicsUpdates.Add(blockPos);
-				//}
+				Block.Blocks[incomingType].OnPlace(this, Level, blockPos);
 			}
 			else
 			{
-				Level.PlayerBlockChange(this, x, y, z, (byte) Blocks.Air);
+				Level.PlayerBlockChange(this, x, y, z, (byte) MCBlocks.Air);
+				Block.Blocks[oldBlock].OnBreak(this, Level, blockPos);
 			}
 		}
 
@@ -277,6 +376,8 @@ namespace MCFrog
 
 		private void UpdatePlayerPos()
 		{
+			if (_isInvisible) return;
+
 			var packet = new Packet();
 
 			if (_delta.IsZero())
@@ -377,7 +478,21 @@ namespace MCFrog
 			}
 
 			if (Commands.CommandHandler.Commands.ContainsKey(accessor))
-				Commands.CommandHandler.Commands[accessor].Use(this, parameters, messageSend);
+			{
+				Commands.CommandBase commandBase = Commands.CommandHandler.Commands[accessor];
+				if (PermissionLevel < commandBase.Permission)
+				{
+					SendMessage("You do not have permission to use that command!");
+				}
+				else
+				{
+					ThreadPool.QueueUserWorkItem(delegate
+					{
+						commandBase.PlayerUse(this, parameters, messageSend);
+					});
+				}
+			}
+				
 			else
 				SendMessage("Command " + accessor + " does not exist!");
 
@@ -624,7 +739,7 @@ namespace MCFrog
 			p.AddVar(ProtocolVersion);
 			p.AddVar(name);
 			p.AddVar(motd);
-			p.AddVar((byte) (_isAdmin ? 100 : 0));
+			p.AddVar((byte) (IsAdmin ? 100 : 0));
 
 			Server.Log("Send MOTD", LogTypesEnum.Debug);
 			SendPacket(p);
@@ -691,7 +806,7 @@ namespace MCFrog
 
 			SendAllSpawns();
 
-			//SendTeleportThisPlayer(level.spawnPos);
+			SendTeleportThisPlayer(Level.SpawnPos);
 
 			Server.Log("map done", LogTypesEnum.Debug);
 		}
@@ -706,9 +821,7 @@ namespace MCFrog
 
 		internal static void SendGlobalChat(Player player, string message)
 		{
-			string username = player.Username;
-
-			string toSend = "<" + username + ">: " + message;
+			string toSend = player.Tag + ": " + message;
 
 			Server.Log("!" + toSend, LogTypesEnum.Chat);
 
@@ -727,9 +840,7 @@ namespace MCFrog
 
 		internal static void SendLevelChat(Player player, string message)
 		{
-			string username = player.Username;
-
-			string toSend = "<" + username + ">: " + message;
+			string toSend = player.Tag + ": " + message;
 
 			Server.Log("!" + toSend, LogTypesEnum.Chat);
 
@@ -863,7 +974,7 @@ namespace MCFrog
 			p.AddVar(x);
 			p.AddVar(y);
 			p.AddVar(z);
-			p.AddVar(type);
+			p.AddVar((Block.Blocks.ContainsKey(type) ? Block.Blocks[type].BaseType : (byte)0));
 			SendPacket(p);
 		}
 
@@ -879,7 +990,27 @@ namespace MCFrog
 			var ms = new MemoryStream();
 			var gs = new GZipStream(ms, CompressionMode.Compress, true);
 			gs.Write(mapSize, 0, mapSize.Length);
-			gs.Write(levelData, 0, levelData.Length);
+			//gs.Write(levelData, 0, levelData.Length);
+
+			int currentstart = 0;
+
+			for (int i = 0; i < levelData.Length; i++ )
+			{
+				byte block = levelData[i];
+				if(block>49)
+				{
+					if(i>0) gs.Write(levelData, currentstart, (i-currentstart));
+					currentstart = i + 1;
+
+					gs.WriteByte((Block.Blocks.ContainsKey(block) ? Block.Blocks[block].BaseType : (byte)0));
+				}
+				
+			}
+
+			if (currentstart != levelData.Length)
+			{
+				gs.Write(levelData, currentstart, (levelData.Length - currentstart));
+			}
 
 			gs.Flush();
 			gs.Dispose();
@@ -916,6 +1047,8 @@ namespace MCFrog
 			}
 			return 254;
 		}
+
+		
 	}
 
 	public class Packet
@@ -968,21 +1101,21 @@ namespace MCFrog
 			}
 		}
 
-		internal void Gzip()
-		{
-			var ms = new MemoryStream();
-			var gs = new GZipStream(ms, CompressionMode.Compress, true);
-			gs.Write(Bytes.ToArray(), 0, Bytes.Count);
-			gs.Close();
-			gs.Dispose();
-			ms.Position = 0;
-			Bytes.Clear();
-			var buffer = new byte[ms.Length];
-			ms.Read(buffer, 0, (int) ms.Length);
-			ms.Close();
-			ms.Dispose();
-			Bytes.AddRange(buffer);
-		}
+		//internal void Gzip()
+		//{
+		//    var ms = new MemoryStream();
+		//    var gs = new GZipStream(ms, CompressionMode.Compress, true);
+		//    gs.Write(Bytes.ToArray(), 0, Bytes.Count);
+		//    gs.Close();
+		//    gs.Dispose();
+		//    ms.Position = 0;
+		//    Bytes.Clear();
+		//    var buffer = new byte[ms.Length];
+		//    ms.Read(buffer, 0, (int) ms.Length);
+		//    ms.Close();
+		//    ms.Dispose();
+		//    Bytes.AddRange(buffer);
+		//}
 
 		//Misc Methods
 		private IEnumerable<byte> HTNO(short x)

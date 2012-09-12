@@ -3,11 +3,11 @@ using System.Text;
 using System.Net;
 using System.IO;
 
-namespace MCFrog.HeartBeat
+namespace MineFrog.HeartBeat
 {
 	public class HeartBeat : MarshalByRefObject
 	{
-		static string _hash;
+		public string _hash;
 		public static string ServerURL;
 		static string _staticVars;
 		public byte CurrentPlayers = 0;
@@ -55,7 +55,7 @@ namespace MCFrog.HeartBeat
 			Beat(CurrentPlayers);
 		}
 
-		static void Beat(int currentPlayers)
+		void Beat(int currentPlayers)
 		{
 			//Console.WriteLine("Beating!");
 			

@@ -5,11 +5,13 @@ using System.Globalization;
 
 //TODO Setup the TYPES of logging to be static, so that I can use them in other subsystems.
 
-namespace MCFrog
+namespace MineFrog
 {
 	public class InputOutput
 	{
 		public static InputOutput Instance;
+
+		private Server server;
 
 		public static Dictionary<LogTypesEnum, LogTypeClass> LogTypeList = new Dictionary<LogTypesEnum, LogTypeClass>();
 		public static string Messagepart = "";
@@ -81,8 +83,6 @@ namespace MCFrog
 
 		private static void HandleCommand(string message)
 		{
-			//Shit!
-
 			string[] command = message.Split(' ');
 			
 			string messageSend = "";
@@ -96,17 +96,11 @@ namespace MCFrog
 			}
 
 			if (Commands.CommandHandler.Commands.ContainsKey(accessor))
-				Commands.CommandHandler.Commands[accessor].Use(parameters, messageSend);
+				Commands.CommandHandler.Commands[accessor].ConsoleUse(parameters, messageSend);
 			else
 			{
-				foreach (string S in Commands.CommandHandler.Commands.Keys)
-				{
-					Server.Log(S + "", LogTypesEnum.Info);
-				}
-				Server.Log("Commands cannot be used in the console at this time!", LogTypesEnum.Error);
+				Server.Log("Command Not Found!", LogTypesEnum.Error);
 			}
-
-			//TODO ?
 		}
 
 		public static void InitLogTypes()

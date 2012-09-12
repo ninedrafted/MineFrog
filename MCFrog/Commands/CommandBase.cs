@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace MCFrog.Commands
+namespace MineFrog.Commands
 {
 	public abstract class CommandBase
 	{
@@ -42,38 +42,48 @@ namespace MCFrog.Commands
 		/// <param name="p">The player that called your command.</param>
 		/// <param name="parameters">The parameters (as strings) that the player entered for your command, for example if a player entered "/say hello there" than this string[] would contain two strings, "hello" and "there", if you need chat messages you can more easily get them by using the fullcommand parameter</param>
 		/// <param name="fullCommand">This is the full command (without the actual command accessor) that the player used, you can use this to get chat messages if you need to, to get parameters it is suggester you use the parameter parameter (lolwut)</param>
-		public abstract void Use(Player p, string[] parameters, string fullCommand);
+		public virtual void PlayerUse(Player p, string[] parameters, string fullCommand)
+		{
+			p.SendMessage(Name + " is a console only command!.");
+		}
 		/// <summary>
 		/// This method is called when your command is NOT called by a player (for exampe if the Console uses a command)
 		/// </summary>
 		/// <param name="parameters">The parameters (as strings) that the player entered for your command, for example if a player entered "/say hello there" than this string[] would contain two strings, "hello" and "there", if you need chat messages you can more easily get them by using the fullcommand parameter</param>
 		/// <param name="fullCommand">This is the full command (without the actual command accessor) that the player used, you can use this to get chat messages if you need to, to get parameters it is suggester you use the parameter parameter (lolwut)</param>
-		public void Use(string[] parameters, string fullCommand)
+		public virtual void ConsoleUse(string[] parameters, string fullCommand)
 		{
-			Server.Log(Name + " cannot be used from the console!", LogTypesEnum.Error);
+			Server.Log(Name + " Is not available as a console command!", LogTypesEnum.Info);
 		}
 
 		/// <summary>
 		/// This method is called when a player uses /Help *Command*
 		/// </summary>
 		/// <param name="p">The player that called help on your command</param>
-		public abstract void Help(Player p);
+		public virtual void PlayerHelp(Player p)
+		{
+			p.SendMessage(Name + " is a console only command!.");
+		}
 		/// <summary>
 		/// This method is called when /help is used on your command by the console.
 		/// </summary>
-		public void Help()
+		public virtual void ConsoleHelp()
 		{
-			Server.Log(Name + " cannot be used from the console!", LogTypesEnum.Error);
+			Server.Log(Name + " Is not available as a console command!", LogTypesEnum.Info);
 		}
 
 		public void Initialize()
 		{
 			foreach (var accessor in Accessors)
 			{
-				if (CommandHandler.Commands.ContainsKey(accessor)) continue;
+				if (CommandHandler.Commands.ContainsKey(accessor.ToLower()))
+				{
+					continue;
+				}
+
 				CommandHandler.Commands.Add(accessor.ToLower(), this);
 
-				Server.Log(accessor + " added for command " + Name, LogTypesEnum.Debug);
+				//Server.Log(accessor + " added for command " + Name, LogTypesEnum.Debug);
 			}
 		}
 	}

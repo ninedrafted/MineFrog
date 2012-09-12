@@ -5,7 +5,7 @@ using System.Reflection;
 using System.Text;
 using System.IO;
 
-namespace MCFrog.Commands
+namespace MineFrog.Commands
 {
 	internal class CommandHandler
 	{
@@ -14,10 +14,6 @@ namespace MCFrog.Commands
 		internal CommandHandler()
 		{
 			LoadCommands();
-
-			//TODO initialize commands!
-			//CommandTest CT = new CommandTest();
-			//CT.Initialize();
 		}
 
 		internal void LoadCommands()
@@ -40,9 +36,9 @@ namespace MCFrog.Commands
 					{
 						if (pluginType.IsSubclassOf(typeof(CommandBase)) && pluginType.IsPublic && !pluginType.IsAbstract)
 						{
-							CommandBase command = (CommandBase)Activator.CreateInstance(pluginAssembly.GetType(pluginType.ToString()));
+							var command = (CommandBase)Activator.CreateInstance(pluginAssembly.GetType(pluginType.ToString()));
 							command.Initialize();
-							Server.Log("Found one :D", LogTypesEnum.Debug);
+							//Server.Log("Found one :D", LogTypesEnum.Debug);
 						}
 					}
 				}
